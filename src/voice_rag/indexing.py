@@ -95,9 +95,12 @@ class Embedder:
     the encoder adds them automatically so callers never need to know the model family.
     """
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, device: str | None = None):
+        from .config import get_settings
+
         self.model_name = model_name
         self._model = None
+        self._device = device or get_settings().embed_device
         is_e5 = "e5" in model_name.lower()
         self._query_prefix = "query: " if is_e5 else ""
         self._passage_prefix = "passage: " if is_e5 else ""
@@ -108,7 +111,7 @@ class Embedder:
                 from sentence_transformers import SentenceTransformer
             except ImportError as exc:
                 raise RuntimeError("Install sentence-transformers for vector indexing") from exc
-            self._model = SentenceTransformer(self.model_name)
+            self._model = SentenceTransformer(self.model_name, device=self._device)
         return self._model
 
     async def embed(self, text: str) -> list[float]:

@@ -8,7 +8,12 @@ from .core import detect_language, normalize_text
 from .guards import QueryGuard, answer_overlap_ratio
 from .metadata import QueryTraceStore
 from .observability import TraceSink, privacy_id
-from .providers import AnswerGenerator, SpeechToText, decode_audio
+from .providers import (
+    AnswerGenerator,
+    LocalFastAnswerGenerator,
+    SpeechToText,
+    decode_audio,
+)
 from .retrieval import InMemoryRetriever, grounded
 from .schemas import Citation, QueryRequest, QueryResponse
 from .tools import ReadOnlyWebTool
@@ -31,10 +36,17 @@ class ResearchHarness:
         self.retriever = retriever or InMemoryRetriever()
         self.stt = stt or SpeechToText(settings)
         self.generator = generator or AnswerGenerator(settings)
+        self.fast_generator = LocalFastAnswerGenerator(settings)
         self.guard = QueryGuard()
         self.traces = traces or TraceSink(settings.trace_path)
         self.web_tool = web_tool or ReadOnlyWebTool(settings)
         self.trace_db = trace_db or QueryTraceStore(settings.postgres_dsn)
+
+    def _active_generator(self, mode: str | None):
+        """Route to the hosted LLM (normal) or the local extractive path (fast)."""
+        if mode is None:
+            mode = self.settings.answer_mode
+        return self.fast_generator if mode == "fast" else self.generator
 
     async def run(
         self,
@@ -80,6 +92,7 @@ class ResearchHarness:
                 decision.category,
                 timings,
                 started,
+                mode=getattr(request, "mode", None),
             )
         language = detect_language(transcript, request.language)
         self.traces.emit("retrieval_gate", trace_id, decision="retrieve", language=language)
@@ -111,7 +124,10 @@ class ResearchHarness:
             result_count=len(citations),
         )
         if not self._is_platform_question(transcript):
-            citations = [item for item in citations if item.passage_id != "platform-about"]
+            # Platform meta ("about the assistant") must never serve as evidence for a
+            # normal research question. Match on source_type, because Qdrant chunks carry
+            # a content-hash id, not the curated row's original id.
+            citations = [item for item in citations if item.source_type != "platform"]
         citations = self._fit_context(citations)
         if not grounded(citations, self.settings.min_retrieval_score) and hasattr(self.web_tool, "search"):
             web_documents = await self.web_tool.search(transcript)
@@ -137,15 +153,17 @@ class ResearchHarness:
                 timings,
                 started,
                 citations,
+                mode=getattr(request, "mode", None),
             )
         event("generation.started", citation_count=len(citations))
         stage = time.perf_counter()
-        if on_token and hasattr(self.generator, "generate_stream"):
-            result = await self.generator.generate_stream(
+        generator = self._active_generator(getattr(request, "mode", None))
+        if on_token and hasattr(generator, "generate_stream"):
+            result = await generator.generate_stream(
                 transcript, language, citations, on_token
             )
         else:
-            result = await self.generator.generate(transcript, language, citations)
+            result = await generator.generate(transcript, language, citations)
         timings["generation"] = (time.perf_counter() - stage) * 1000
         timings["total"] = (time.perf_counter() - started) * 1000
         refused = bool(result.get("refused", False))
@@ -193,6 +211,7 @@ class ResearchHarness:
             refusal_reason=refusal_reason,
             citations=citations,
             timings_ms=timings,
+            mode=result.get("mode", getattr(request, "mode", None) or self.settings.answer_mode),
         )
         event(
             "answer.completed",
@@ -256,7 +275,7 @@ class ResearchHarness:
         return bool(terms & capability_terms)
 
     def _refusal(
-        self, trace_id, transcript, language, reason, category, timings, started, citations=None
+        self, trace_id, transcript, language, reason, category, timings, started, citations=None, mode=None
     ):
         timings["total"] = (time.perf_counter() - started) * 1000
         response = QueryResponse(
@@ -270,6 +289,7 @@ class ResearchHarness:
             refusal_reason=reason,
             citations=citations or [],
             timings_ms=timings,
+            mode=mode or self.settings.answer_mode,
         )
         self.traces.emit(
             "harness_end",

@@ -1,4 +1,4 @@
-.PHONY: install install311 infra-up infra-down api frontend dev test lint run up down postgres-init ingest index-slice index-language index-all evaluate
+.PHONY: install install311 infra-up infra-down api frontend dev test lint run up down postgres-init ingest index-slice index-language index-all evaluate evaluate-fast
 install:
 	.venv/bin/python -m pip install -e '.[dev,ingest]'
 # datasets streaming needs Python 3.11 (dill is broken on 3.14); ingestion tooling runs here.
@@ -39,3 +39,5 @@ index-all:
 	.venv311/bin/voice-rag-index --all --version $(VERSION)
 evaluate:
 	.venv/bin/voice-rag-evaluate $(QUERIES)
+evaluate-fast:
+	.venv/bin/voice-rag-evaluate $(QUERIES) --mode end-to-end --answer-mode fast --output results/latency-fast.json

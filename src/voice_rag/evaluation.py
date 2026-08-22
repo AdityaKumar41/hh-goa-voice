@@ -30,7 +30,12 @@ def _latency_summary(values: list[float]) -> dict:
     }
 
 
-async def evaluate(path: Path, mode: str = "retrieval", language: str | None = None) -> dict:
+async def evaluate(
+    path: Path,
+    mode: str = "retrieval",
+    language: str | None = None,
+    answer_mode: str | None = None,
+) -> dict:
     settings = get_settings()
     retriever = build_retriever()
     pipeline = QueryPipeline(settings, retriever=retriever)
@@ -58,7 +63,9 @@ async def evaluate(path: Path, mode: str = "retrieval", language: str | None = N
             grounded = bool(citations and max(c.score for c in citations) >= settings.min_retrieval_score)
             total_ms = retrieval_ms
         else:
-            response = await pipeline.run(QueryRequest(text=text, language=requested))
+            response = await pipeline.run(
+                QueryRequest(text=text, language=requested, mode=answer_mode)
+            )
             retrieval_ms = response.timings_ms.get("retrieval", 0.0)
             total_ms = response.timings_ms.get("total", retrieval_ms)
             grounded = not response.refused
@@ -99,10 +106,18 @@ def main() -> None:
         help="retrieval measures the orchestration seam (embedding + search + merge); "
         "end-to-end includes hosted STT and answer generation",
     )
+    parser.add_argument(
+        "--answer-mode",
+        choices=["normal", "fast"],
+        help="answer router for end-to-end mode: normal = hosted LLM, fast = local "
+        "extractive (whole path <200ms). Defaults to settings.answer_mode.",
+    )
     parser.add_argument("--language", help="restrict evaluation to one language code")
     parser.add_argument("--output", type=Path, default=Path("results/latency.json"))
     args = parser.parse_args()
-    result = asyncio.run(evaluate(args.queries, mode=args.mode, language=args.language))
+    result = asyncio.run(
+        evaluate(args.queries, mode=args.mode, language=args.language, answer_mode=args.answer_mode)
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2))
     print(json.dumps(result, indent=2))

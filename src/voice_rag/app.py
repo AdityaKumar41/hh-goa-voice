@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from .retrieval import HybridRetriever, InMemoryRetriever, QdrantRetriever, Sear
 from .schemas import HealthResponse, QueryRequest, QueryResponse
 from .tools import ToolError
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 CURATED_PATH = Path("data/curated/hacker-house-goa-2026.jsonl")
@@ -57,10 +59,13 @@ def build_retriever():
         client = QdrantClient(url=settings.qdrant_url, timeout=1)
         client.get_collection(settings.qdrant_collection)
         embedder = Embedder(settings.embedding_model)
-        # Warm the model (load + one inference) so the first user query never pays
-        # model-load or accelerator kernel-compilation latency.
+        # Warm the model (load + realistic inference) so the first user query never
+        # pays model-load or accelerator kernel-compilation latency. MPS compiles a
+        # separate graph per batch shape, so warm both the single-query shape and a
+        # larger batch (indexing) shape.
         embedder._load()
-        embedder.embed_batch(["warmup"])
+        embedder.embed_batch(["Who can attend Hacker House Goa?"])
+        embedder.embed_batch(["What is the capital of India?" for _ in range(8)])
         dense = QdrantRetriever(client, settings.qdrant_collection, embedder)
         return HybridRetriever(dense)
     except Exception:  # noqa: BLE001 - startup must tolerate an unavailable optional index
@@ -76,6 +81,14 @@ pipeline = QueryPipeline(settings, retriever=build_retriever())
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Warm the full retrieval path (embed + Qdrant connection + lexical merge) a few
+    # times so the first user request never pays accelerator graph compilation or
+    # connection setup. A single warmup can leave a residual first-call cost.
+    for _ in range(3):
+        try:
+            await pipeline.retriever.search("Is Hacker House Goa free?", "en", 4)
+        except Exception:
+            logger.warning("startup warmup search failed", exc_info=True)
     yield
 
 

@@ -1,28 +1,4 @@
 services:
-  api:
-    build: .
-    env_file: .env
-    ports: ["8000:8000"]
-    depends_on:
-      qdrant: {condition: service_healthy}
-      postgres: {condition: service_healthy}
-    volumes: ["./data:/app/data"]
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    env_file: .env
-    command: ["sh", "-c", "voice-rag-index --all --version $${INDEX_VERSION:-server-build}"]
-    profiles: ["ingestion"]
-    depends_on: [qdrant, postgres]
-    volumes: ["./data:/app/data"]
-  frontend:
-    image: node:22-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev"
-    ports: ["5173:5173"]
-    volumes: ["./frontend:/app"]
-    depends_on: [api]
   qdrant:
     image: qdrant/qdrant:v1.19.0
     ports: ["6333:6333", "6334:6334"]

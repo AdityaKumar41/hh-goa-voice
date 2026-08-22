@@ -36,6 +36,7 @@ class QueryRequest(BaseModel):
     language: str | None = None
     audio_base64: str | None = None
     source_url: str | None = Field(default=None, max_length=2000)
+    mode: Literal["normal", "fast"] | None = None
 
 
 class QueryResponse(BaseModel):
@@ -49,6 +50,7 @@ class QueryResponse(BaseModel):
     refusal_reason: str | None = None
     citations: list[Citation] = Field(default_factory=list)
     timings_ms: dict[str, float] = Field(default_factory=dict)
+    mode: Literal["normal", "fast"] = "normal"
 
 
 class HealthResponse(BaseModel):

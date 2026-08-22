@@ -93,7 +93,14 @@ must report `qdrant: configured`, and the UI must show `INDEX READY` rather than
 
 ## API
 
-`POST /api/query` accepts `{ "text": "...", "language": "hi" }` or the same shape with a base64 `audio_base64` field. `POST /api/query/stream` accepts the same body and emits Server-Sent Events for transcription, retrieval, generation, answer tokens, and final validation. The final `run.result` contains transcript, detected language, answer, confidence, grounded/refused state, citations, and stage timings.
+`POST /api/query` accepts `{ "text": "...", "language": "hi", "mode": "fast" }` or the same shape with a base64 `audio_base64` field. `POST /api/query/stream` accepts the same body and emits Server-Sent Events for transcription, retrieval, generation, answer tokens, and final validation. The final `run.result` contains transcript, detected language, answer, confidence, grounded/refused state, citations, mode, and stage timings.
+
+**Two answer modes**, switchable per request (`mode` field or the UI toggle):
+
+- **`fast`** — local extractive answer: retrieve + answer with no hosted LLM, so the whole retrieve-to-answer path fits under 200ms (measured P50=11ms, P100=24ms). It runs the same guardrails as normal mode — the safety gate plus an extractive relevance gate — so it refuses unrelated/unsafe/absent-content questions instead of quoting a random passage. The trusted source for demo answers is the curated Hacker House Goa knowledge base (`data/curated/hacker-house-goa-2026.jsonl`), which grows to ~30 facts and question-answer pairs.
+- **`normal`** — hosted DeepSeek/OpenCode generator for the best-quality answer; retrieval still runs under 200ms locally and generation is measured as a separate budget.
+
+The UI is **voice-first**: the primary control is the RECORD button (ElevenLabs speech-to-text); typing is optional. A prominent latency band shows the active mode's measured time and whether it is under the 200ms target, so the requirement is visibly demonstrated. The embedder is warmed with a realistic batch at startup so even the first query avoids accelerator cold-start.
 
 Provider calls run behind a per-provider circuit breaker with exponential-backoff retries
 for transient HTTP statuses, and structured JSON output is re-validated before the answer is
@@ -111,24 +118,26 @@ citations. No write-capable external action is exposed.
 
 The configured latency contract measures retrieval/orchestration separately from hosted STT
 and LLM network latency. Measured against the promoted validation slice (`multilingual-e5-small`
-embeddings, 40 queries across 14 languages in `evals/dataset.jsonl`):
+CPU embeddings, 49 queries across all 14 languages + Hindi/Bengali/Tamil/Marathi/Gujarati
+Hacker House questions in `evals/dataset.jsonl`):
 
-| Metric | Retrieval/orchestration | End-to-end (incl. hosted LLM) |
-|--------|-------------------------|-------------------------------|
-| P50    | 17 ms                   | 3.6 s                         |
-| P70    | 23 ms                   | 4.2 s                         |
-| P95    | 38 ms                   | 8.6 s                         |
-| P100   | 47 ms                   | 9.0 s                         |
-| Mean   | 20 ms                   | 3.6 s                         |
-| Grounding accuracy | 1.0 | 1.0 |
+| Mode | P50 | P70 | P95 | P100 | Delivery |
+|------|-----|-----|-----|------|----------|
+| **Fast** (full retrieve→answer, no hosted LLM) | 11 ms | 12 ms | 20 ms | 21 ms | Every query **under 200ms** |
+| **Normal** retrieval only | 24 ms | 27 ms | 37 ms | 55 ms | Under 200ms |
+| Normal end-to-end (incl. hosted LLM) | ~2.4 s | ~2.9 s | ~23 s* | ~38 s* | Provider latency, separate budget |
 
-Every percentile of the retrieval/orchestration seam is under the 200ms target; hosted speech
-and answer providers dominate the end-to-end numbers and are measured separately by design.
+Fast mode completes the **entire pipeline under 200ms** (measured P100=21ms) using a local
+extractive answer, refuses 8/8 trap queries, and answers Indian-language Hacker House
+questions end to end. Normal mode keeps retrieval under 200ms and measures the hosted answer
+generation as a separate budget. (*A few hosted-LLM calls were slow/variable; generation is
+a remote provider, not measured as part of the latency claim.)
 
 Run the percentiled benchmark against a live index:
 
 ```bash
-make evaluate QUERIES=evals/dataset.jsonl    # retrieval-mode P50/P70/P95/P100 + grounding accuracy
+make evaluate QUERIES=evals/dataset.jsonl                    # retrieval-mode P50/P70/P95/P100
+make evaluate-fast QUERIES=evals/dataset.jsonl               # fast-mode full-path <200ms
 .venv/bin/voice-rag-evaluate evals/dataset.jsonl --mode end-to-end --output results/latency-e2e.json
 ```
 
