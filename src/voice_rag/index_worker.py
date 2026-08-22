@@ -53,6 +53,7 @@ def build_index(
     version: str,
     manifest_path: Path,
     strategy: str = "adaptive",
+    semantic: bool = True,
 ) -> dict:
     from qdrant_client import QdrantClient
 
@@ -89,7 +90,7 @@ def build_index(
             for record in iter_chunks([row], language, strategy=strategy):
                 batch.append(_as_chunk(record))
                 chunk_count += 1
-            if strategy in {"adaptive", "semantic"}:
+            if semantic and strategy in {"adaptive", "semantic"}:
                 for record in iter_semantic_chunks([row], language, embedder):
                     batch.append(_as_chunk(record))
                     chunk_count += 1
@@ -147,6 +148,11 @@ def main() -> None:
         choices=["adaptive", "sentence_overlap", "fixed_overlap", "semantic"],
         help="chunking strategy applied to dataset passages (semantic adds embedding-aware chunks)",
     )
+    parser.add_argument(
+        "--no-semantic",
+        action="store_true",
+        help="skip embedding-aware semantic chunks (much faster; qa-pair + adaptive chunks remain)",
+    )
     args = parser.parse_args()
     languages = LANGUAGES if args.all else args.languages or ["hi"]
     manifest = args.manifest or Path("data/manifests") / f"{args.version}.json"
@@ -158,6 +164,7 @@ def main() -> None:
         version=args.version,
         manifest_path=manifest,
         strategy=args.strategy,
+        semantic=not args.no_semantic,
     )
     print(json.dumps(result, indent=2))
 
