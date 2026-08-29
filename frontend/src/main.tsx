@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+// Vercel variables are sometimes entered as a bare host. Without a protocol,
+// fetch treats the value as a path on the frontend origin and produces URLs
+// such as /hh-goa-voice-production.up.railway.app/api/… (404 on Vercel).
+const configuredApiUrl = String(import.meta.env.VITE_API_URL || "https://hh-goa-voice-production.up.railway.app").trim();
+const API_URL = (configuredApiUrl && !/^[a-z][a-z\d+.-]*:\/\//i.test(configuredApiUrl)
+  ? `https://${configuredApiUrl}`
+  : configuredApiUrl).replace(/\/$/, "");
 const apiUrl = (path: string) => `${API_URL}${path}`;
 
 const languages = ["auto", "en", "as", "bn", "gu", "hi", "kn", "ml", "mr", "ne", "or", "pa", "sa", "ta", "te", "ur"];
