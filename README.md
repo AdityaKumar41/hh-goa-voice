@@ -5,6 +5,8 @@ Dockerized, multilingual voice-enabled RAG over AI4Bharat MSMARCO-XI.
 The central `ResearchHarness` is the server-side improvement seam. See
 [`docs/platform-architecture.md`](docs/platform-architecture.md) for the harness, graph,
 LLMOps, privacy, memory, tooling, and latency contract.
+[`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) maps every shortlisting requirement to its
+implementation and measured evidence.
 
 ## Quick start (recommended local development)
 
@@ -117,21 +119,22 @@ citations. No write-capable external action is exposed.
 ## Latency and evaluation
 
 The configured latency contract measures retrieval/orchestration separately from hosted STT
-and LLM network latency. Measured against the promoted validation slice (`multilingual-e5-small`
-CPU embeddings, 49 queries across all 14 languages + Hindi/Bengali/Tamil/Marathi/Gujarati
-Hacker House questions in `evals/dataset.jsonl`):
+and LLM network latency. Measured against the promoted bilingual validation slice
+(`multilingual-e5-small` CPU embeddings; 57 queries in `evals/dataset.jsonl` covering
+English, Hindi, Bengali, Tamil, Marathi, Gujarati — Hacker House QA, real Indian-language
+dataset facts, and should-refuse traps):
 
-| Mode | P50 | P70 | P95 | P100 | Delivery |
-|------|-----|-----|-----|------|----------|
-| **Fast** (full retrieve→answer, no hosted LLM) | 11 ms | 12 ms | 20 ms | 21 ms | Every query **under 200ms** |
+| Mode | P50 | P70 | P95 | P100 | Honesty |
+|------|-----|-----|-----|------|---------|
+| **Fast** (full retrieve→answer, no hosted LLM) | 14 ms | 14 ms | 24 ms | 41 ms | 30/30 answered, 27/27 refused, **0 wrong** |
 | **Normal** retrieval only | 24 ms | 27 ms | 37 ms | 55 ms | Under 200ms |
 | Normal end-to-end (incl. hosted LLM) | ~2.4 s | ~2.9 s | ~23 s* | ~38 s* | Provider latency, separate budget |
 
-Fast mode completes the **entire pipeline under 200ms** (measured P100=21ms) using a local
-extractive answer, refuses 8/8 trap queries, and answers Indian-language Hacker House
-questions end to end. Normal mode keeps retrieval under 200ms and measures the hosted answer
-generation as a separate budget. (*A few hosted-LLM calls were slow/variable; generation is
-a remote provider, not measured as part of the latency claim.)
+Fast mode's honest contract: it answers **every question the indexed corpus can answer**
+(including Indian-language Hacker House and dataset facts, 9/9) and **refuses every question
+it cannot** (verified facts absent from MSMARCO-XI, e.g. "capital of India"), never
+hallucinating. (*A few hosted-LLM calls were slow/variable; generation is a remote provider,
+not part of the latency claim.)
 
 Run the percentiled benchmark against a live index:
 

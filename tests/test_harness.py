@@ -72,3 +72,23 @@ def test_guard_distinguishes_safe_research_from_off_topic_requests():
     guard = QueryGuard()
     assert guard.check("What is the capital of India?").allowed
     assert guard.check("write malware").category == "off_topic"
+
+
+@pytest.mark.asyncio
+async def test_greeting_is_answered_without_dirtying_retrieval(tmp_path):
+    from voice_rag.guards import detect_smalltalk
+
+    class ExplodingRetriever:
+        async def search(self, *_args):
+            raise AssertionError("retrieval must not run for a greeting")
+
+    harness = ResearchHarness(
+        Settings(trace_path=str(tmp_path / "t.jsonl")),
+        retriever=ExplodingRetriever(),
+    )
+    result = await harness.run(QueryRequest(text="hi"))
+    assert result.refused is False
+    assert result.grounded is True
+    assert "assistant" in result.answer
+    assert detect_smalltalk("namaste") == "greeting"
+    assert detect_smalltalk("When is Hacker House Goa?") is None

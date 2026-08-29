@@ -74,10 +74,29 @@ class QueryGuard:
         return GuardDecision(True)
 
 
+def _stem(word: str) -> str:
+    """Light suffix stemmer so plural/tense variants (team/teams, hold/held) still match.
+
+    Devanagari/Indic words are returned unchanged (no latin suffixes to strip).
+    """
+    if not word or not word.isascii():
+        return word
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"
+    if word.endswith("ing") and len(word) > 5:
+        base = word[:-3]
+        return base.removesuffix("e")
+    if word.endswith("es") and len(word) > 4:
+        return word[:-2] if not word.endswith("ies") else word
+    if word.endswith("s") and len(word) > 3 and not word.endswith(("ss", "us", "is")):
+        return word[:-1]
+    return word
+
+
 def answer_overlap_ratio(answer: str, evidence: list[str]) -> float:
-    """Fraction of answer content words that appear in the retrieved evidence."""
+    """Fraction of answer content words (stemmed) that appear in the retrieved evidence."""
     words = re.findall(r"[a-zA-Z\u0900-\u0d7f]+", answer.casefold())
-    content_words = [word for word in words if len(word) > 2 and word not in {
+    content_words = [_stem(word) for word in words if len(word) > 2 and word not in {
         "the", "and", "for", "with", "from", "that", "this", "have", "are", "was", "were",
         "not", "but", "you", "your", "can", "will", "about", "their", "what", "where",
         "when", "who", "how", "which", "there",
@@ -87,7 +106,35 @@ def answer_overlap_ratio(answer: str, evidence: list[str]) -> float:
     evidence_terms = set()
     for chunk in evidence:
         evidence_terms.update(
-            word for word in re.findall(r"[a-zA-Z\u0900-\u0d7f]+", chunk.casefold())
+            _stem(word)
+            for word in re.findall(r"[a-zA-Z\u0900-\u0d7f]+", chunk.casefold())
         )
     matched = sum(word in evidence_terms for word in content_words)
     return matched / len(content_words)
+
+
+def detect_smalltalk(text: str) -> str | None:
+    """Recognize pure greetings/thanks/farewell so they are not sent to retrieval.
+
+    Small talk must never be answered by quoting a random dataset passage — it gets a
+    friendly canned reply instead. Returns the category name or None.
+    """
+    t = text.casefold().strip()
+    patterns = {
+        "greeting": (
+            "hi", "hello", "hey", "heya", "hola", "namaste", "नमस्ते", "vanakkam", "வணக்கம்",
+            "good morning", "good afternoon", "good evening", "good day", "wassup",
+            "what's up", "how are you", "how r u", "kaise ho", "कैसे हो", "kem cho", "સત શ્રી અકાલ",
+        ),
+        "thanks": (
+            "thank you", "thanks", "thank you very much", "thx", "dhanyavad", "धन्यवाद",
+            "shukriya", "शुक्रिया", "you're great", "great work",
+        ),
+        "farewell": ("bye", "goodbye", "see you", "alvida", "अलविदा", "see you later"),
+    }
+    for category, words in patterns.items():
+        for word in words:
+            marker = word.casefold()
+            if t == marker or t.startswith(marker + " ") or t.endswith(marker) or f" {marker} " in f" {t} ":
+                return category
+    return None

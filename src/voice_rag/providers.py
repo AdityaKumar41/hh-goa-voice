@@ -15,6 +15,10 @@ from .schemas import Citation
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
 
+def _normalize_spaces(value: str) -> str:
+    return " ".join(str(value).split())
+
+
 class ProviderError(RuntimeError):
     pass
 
@@ -75,12 +79,29 @@ class LocalFastAnswerGenerator:
         def relevance(citation: Citation) -> float:
             return answer_overlap_ratio(question, [citation.text])
 
-        # Rank by: does the passage actually relate to the question, then is it the
-        # marked/gold answer, then retrieval score. Platform meta ("about the
-        # assistant") is de-prioritised so it never answers a content question.
+        def lead_match(citation: Citation) -> bool:
+            """True when the passage's first sentence contains the question verbatim.
+
+            QA rows echo the exact question ("What is Hacker House Goa? Hacker House Goa
+            is ..."); boosting that lead stops a sibling QA row with the same trailing
+            phrase (e.g. a hashtag row) from winning purely on dense score.
+            """
+            question_norm = _normalize_spaces(question).casefold()
+            first = citation.text.split("?", 1)[0] + "?"
+            return question_norm in _normalize_spaces(first).casefold()
+
+        # Rank by: does the passage relate to the question, is its lead the exact
+        # question (echo), is it the marked/gold answer, then retrieval score. Platform
+        # meta ("about the assistant") is de-prioritised so it never answers a content question.
         ranked = sorted(
             citations,
-            key=lambda item: (relevance(item), item.selected, item.source_type != "platform", item.score),
+            key=lambda item: (
+                relevance(item),
+                lead_match(item),
+                item.selected,
+                item.source_type != "platform",
+                item.score,
+            ),
             reverse=True,
         )
         best = ranked[0]
@@ -89,32 +110,39 @@ class LocalFastAnswerGenerator:
         if not text:
             return self._refusal("The best passage was empty.")
 
-        # Guardrail: only quote a passage that is clearly on-topic. A strong lexical
-        # overlap (>= 60% of the question's content words) is the primary signal. A
-        # cross-script query (e.g. Devanagari) can legitimately match a curated English
-        # fact through the multilingual embedder, but we only allow that for the
-        # verified curated knowledge base, never for arbitrary dataset chunks. Anything
-        # weaker is refused rather than answered with unrelated text.
+        # Guardrail: only quote a passage that is clearly on-topic. Hard floors:
+#   - any passage must share at least 40% of the question's content words;
+#   - dataset chunks (arbitrary web text) additionally need the strict 60% overlap;
+#   - curated facts are trusted, so a moderate overlap is acceptable only when the
+#     dense match is high-confidence (>= 0.85) — otherwise a merely-"India"-related
+#     curated row could answer a different question.
+# A cross-script (Indic) query can still match a curated fact through the multilingual
+# embedder at high confidence. Anything weaker is refused, never answered with unrelated text.
         relevance_score = relevance(best)
         indic_question = any("\u0900" <= ch <= "\u0d7f" for ch in question)
         curated = best.source_type in {"event", "platform"}
-        if relevance_score < self.settings.fast_relevance_threshold and not (
-            indic_question and curated and score >= 0.80
-        ):
+        weak = (
+        relevance_score < 0.40
+        or (relevance_score < self.settings.fast_relevance_threshold and score < (0.85 if curated else 9.0))
+        )
+        if weak and not (indic_question and curated and score >= 0.80):
             return self._refusal(
                 "The retrieved evidence did not contain information about this question."
             )
 
-        # Compact span: the answer-bearing sentences, up to ~240 chars.
+        # Compact span: the answer-bearing sentences, up to ~240 chars. A qa_pair
+        # chunk has the form "<question>? <answer>." — drop the echoed question sentence
+        # so the answer reads naturally instead of parroting the user's own question.
         sentences = _re.split(r"(?<=[.!?।॥])\s+", text)
+        if sentences and sentences[0].rstrip().endswith("?"):
+            sentences = sentences[1:]
         span = ""
         for sentence in sentences:
             if len(span) + len(sentence) + 1 > 240:
                 break
             span = f"{span} {sentence}".strip()
-        answer = span or text[:240]
-        if len(answer) < 12:
-            answer = text
+        answers = [part for part in (span, text) if part and len(part) >= 12]
+        answer = answers[0] if answers else text
         return {
             "answer": answer,
             "confidence": round(min(1.0, 0.5 + 0.4 * score + 0.2 * relevance_score), 3),
@@ -263,7 +291,17 @@ class AnswerGenerator:
 
     def _body(self, question: str, language: str, citations: list[Citation]) -> dict:
         context = "\n\n".join(f"[{item.passage_id}] {item.text}" for item in citations)
-        system = "You are a grounded multilingual QA assistant. Answer only from CONTEXT. Return JSON with answer, confidence (0..1), grounded, refused, refusal_reason, and citation_ids. If context is insufficient, refuse."
+        system = (
+            "You are a grounded research assistant. Answer ONLY from the CONTEXT passages. "
+            "Never use your own knowledge or state facts that are not in CONTEXT. Cite the "
+            "passage you used as [ID]. "
+            "If CONTEXT does not contain the answer, set refused=true with a one-line "
+            "refusal_reason. "
+            "Reply in the user's LANGUAGE. Do not describe yourself, your capabilities, or "
+            "that you are an assistant/AI. Be concise (under 90 words). "
+            "Return strict JSON with keys: answer, confidence (0..1), grounded, refused, "
+            "refusal_reason, citation_ids."
+        )
         return {
             "model": self.settings.opencode_model,
             "temperature": 0,

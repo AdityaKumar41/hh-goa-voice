@@ -32,11 +32,27 @@ down:
 ingest:
 	.venv311/bin/voice-rag-ingest --input $(INPUT) --language $(LANGUAGE) --output $(OUTPUT)
 index-slice:
-	.venv311/bin/voice-rag-index --all --split validation --limit 100 --version slice-$(shell date +%Y%m%d%H%M%S)
+	.venv311/bin/voice-rag-index --all --split validation --limit 1000 --version slice-$(shell date +%Y%m%d%H%M%S) --no-semantic
 index-language:
 	.venv311/bin/voice-rag-index --language $(LANG) --version $(VERSION)
 index-all:
 	.venv311/bin/voice-rag-index --all --version $(VERSION)
+# ---- Easy one-command reindex / data-feed -------------------------------------------------
+# voice-rag-reindex wraps the versioned worker: auto version name -> build -> validate -> promote.
+reindex:
+	.venv311/bin/voice-rag-reindex --all
+reindex-slice:
+	.venv311/bin/voice-rag-reindex --slice
+reindex-language:
+	.venv311/bin/voice-rag-reindex --language $(LANG)
+reindex-version:
+	.venv311/bin/voice-rag-reindex --all --version $(VERSION)
+index-status:
+	.venv311/bin/voice-rag-reindex --status
+index-promote:
+	.venv311/bin/voice-rag-reindex --promote $(VERSION)
+index-rollback:
+	.venv311/bin/voice-rag-reindex --rollback $(VERSION)
 evaluate:
 	.venv/bin/voice-rag-evaluate $(QUERIES)
 evaluate-fast:

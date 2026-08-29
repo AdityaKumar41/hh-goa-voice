@@ -1,0 +1,116 @@
+# Production deployment for Voice RAG — full stack.
+#
+# Usage:
+#   cp .env.prod.example .env.prod          # fill in real secrets
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Zero-downtime index migration:
+#   The API keeps serving from the previously promoted alias while a new
+#   version is built. Workers write a NEW versioned collection; on success
+#   the alias is flipped atomically. See DEPLOYMENT.md for the full runbook.
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.0
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-voice_rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voice_rag}
+      POSTGRES_DB: ${POSTGRES_DB:-voice_rag}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-voice_rag} -d ${POSTGRES_DB:-voice_rag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres-init:
+    image: postgres:16-alpine
+    profiles: ["init"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-voice_rag}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-voice_rag}
+      PGDATABASE: ${POSTGRES_DB:-voice_rag}
+    volumes:
+      - ./migrations:/migrations:ro
+    command: ["sh", "-c", "until pg_isready -h postgres -U ${POSTGRES_USER:-voice_rag}; do sleep 2; done; psql -v ON_ERROR_STOP=1 -f /migrations/001_initial.sql"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      REQUIRE_ACTIVE_INDEX: "true"
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: voice_rag_active
+      DATABASE_URL: postgresql://${POSTGRES_USER:-voice_rag}:${POSTGRES_PASSWORD:-voice_rag}@postgres:5432/${POSTGRES_DB:-voice_rag}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
+      EMBED_DEVICE: ${EMBED_DEVICE:-cpu}
+      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY}
+      OPENCODE_GO_BASE_URL: ${OPENCODE_GO_BASE_URL:-https://opencode.ai/zen/go/v1}
+      OPENCODE_MODEL: ${OPENCODE_MODEL:-deepseek-v4-flash}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+      ELEVENLABS_STT_MODEL: ${ELEVENLABS_STT_MODEL:-scribe_v2}
+      WEB_RESEARCH_ENABLED: ${WEB_RESEARCH_ENABLED:-false}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: voice_rag_active
+      HF_TOKEN: ${HF_TOKEN}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
+      EMBED_DEVICE: ${EMBED_DEVICE:-cpu}
+      INDEX_BATCH_SIZE: ${INDEX_BATCH_SIZE:-64}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    command: ["sleep", "infinity"]
+
+volumes:
+  qdrant_data:
+  postgres_data:

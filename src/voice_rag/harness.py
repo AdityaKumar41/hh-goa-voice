@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 
 from .config import Settings
 from .core import detect_language, normalize_text
-from .guards import QueryGuard, answer_overlap_ratio
+from .guards import QueryGuard, answer_overlap_ratio, detect_smalltalk
 from .metadata import QueryTraceStore
 from .observability import TraceSink, privacy_id
 from .providers import (
@@ -17,6 +17,23 @@ from .providers import (
 from .retrieval import InMemoryRetriever, grounded
 from .schemas import Citation, QueryRequest, QueryResponse
 from .tools import ReadOnlyWebTool
+
+_MODEL_BOILERPLATE_MARKERS = (
+    "as an ai",
+    "as a language model",
+    "as a large language model",
+    "i am an ai",
+    "i'm an ai",
+    "i am a language model",
+    "i don't have access to real-time",
+    "i don't have personal experiences",
+    "i cannot provide real-time",
+)
+
+
+def _is_model_boilerplate(answer: str) -> bool:
+    lowered = answer.casefold()
+    return any(marker in lowered for marker in _MODEL_BOILERPLATE_MARKERS)
 
 
 class ResearchHarness:
@@ -97,6 +114,27 @@ class ResearchHarness:
         language = detect_language(transcript, request.language)
         self.traces.emit("retrieval_gate", trace_id, decision="retrieve", language=language)
         event("transcript.ready", transcript=transcript, language=language)
+        # Greetings / thanks / farewell are small talk, not research queries: answer
+        # them with a friendly reply instead of quoting a random dataset passage.
+        smalltalk = detect_smalltalk(transcript)
+        if smalltalk:
+            timings["total"] = (time.perf_counter() - started) * 1000
+            reply = self._smalltalk_reply(smalltalk)
+            response = QueryResponse(
+                trace_id=trace_id,
+                transcript=transcript,
+                detected_language=language,
+                answer=reply,
+                confidence=1.0,
+                grounded=True,
+                refused=False,
+                timings_ms=timings,
+                mode=getattr(request, "mode", None) or self.settings.answer_mode,
+            )
+            self.traces.emit("harness_end", trace_id, grounded=True, refused=False, smalltalk=smalltalk)
+            self.trace_db.write(trace_id, language=language, transcript=transcript, grounded=True, refused=False, timings_ms=timings)
+            event("run.completed", response=response.model_dump(), grounded=True, refused=False, timings_ms=timings)
+            return response
         event("retrieval.started", language=language)
         stage = time.perf_counter()
         if request.source_url:
@@ -172,7 +210,7 @@ class ResearchHarness:
             str(raw_answer).strip()
             if raw_answer is not None and str(raw_answer).strip()
             else (
-                "I could not find enough evidence in the research collection to answer that."
+                self._refusal_answer("ungrounded")
                 if refused
                 else "I could not produce a grounded answer."
             )
@@ -198,6 +236,11 @@ class ResearchHarness:
                 refused = True
                 refusal_reason = "The generated answer was not grounded in the retrieved evidence."
                 answer = "I could not produce an answer that is supported by the retrieved evidence."
+        if not refused and _is_model_boilerplate(answer):
+            # An LLM that answers about itself instead of the evidence fails the harness.
+            refused = True
+            refusal_reason = "The answer provider responded with generic assistant boilerplate instead of grounded content."
+            answer = "I could not produce an answer that is supported by the retrieved evidence."
         if refused and not refusal_reason:
             refusal_reason = "The retrieved evidence was not sufficient to support an answer."
         response = QueryResponse(
@@ -274,6 +317,35 @@ class ResearchHarness:
         }
         return bool(terms & capability_terms)
 
+    @staticmethod
+    def _smalltalk_reply(category: str) -> str:
+        if category == "greeting":
+            return (
+                "Hi! I'm your voice-first multilingual research assistant. I search an "
+                "indexed research collection (MSMARCO-XI + Hacker House Goa facts) and "
+                "answer only from evidence. Try asking, for example: 'When is Hacker "
+                "House Goa?' or 'Who can attend Hacker House Goa?' in English, Hindi, "
+                "Bengali, Tamil or any Indian language."
+            )
+        if category == "thanks":
+            return "You're welcome! Ask me a research question anytime — like 'Is Hacker House Goa free?'."
+        return "Goodbye! Come back with a research question and I'll find the evidence for your answer."
+
+    @staticmethod
+    def _refusal_answer(category: str) -> str:
+        guides = (
+            "Try asking something researchable, like 'When is Hacker House Goa?', "
+            "'Who can attend Hacker House Goa?', or 'Is Hacker House Goa free?' — "
+            "in English or any Indian language."
+        )
+        if category == "unsafe":
+            return "I can't answer that - it is flagged as unsafe or a prompt-injection attempt. " + guides
+        if category == "off_topic":
+            return "That's outside my research scope - I answer only from my indexed research collection. " + guides
+        if category == "privacy":
+            return "I don't handle requests for private or personal data. " + guides
+        return "I couldn't find enough evidence in my research index for that, so I won't guess. " + guides
+
     def _refusal(
         self, trace_id, transcript, language, reason, category, timings, started, citations=None, mode=None
     ):
@@ -282,7 +354,7 @@ class ResearchHarness:
             trace_id=trace_id,
             transcript=transcript,
             detected_language=language,
-            answer="I cannot answer that request safely or with sufficient evidence.",
+            answer=self._refusal_answer(category),
             confidence=0,
             grounded=False,
             refused=True,

@@ -96,6 +96,27 @@ app = FastAPI(title="Voice RAG API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
+@app.get("/api/benchmark")
+async def benchmark(limit: int = 40, mode: str = "fast") -> dict:
+    """Live latency analytics: P50/P70/P95/P100 over the eval queries.
+
+    Runs real queries through the already-warm pipeline (fast mode is local, so it
+    completes in about a second). This is the Requirement-4 latency-analytics surface.
+    """
+    from pathlib import Path as _Path
+
+    from .benchmark import run_benchmark
+
+    rows = [
+        json.loads(line)
+        for line in _Path("evals/dataset.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    if not rows:
+        return {"error": "evals/dataset.jsonl is empty"}
+    return await run_benchmark(pipeline, rows, answer_mode=mode, limit=max(1, min(limit, len(rows))))
+
+
 @app.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     active_index = isinstance(pipeline.retriever, (QdrantRetriever, HybridRetriever))

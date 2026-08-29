@@ -96,12 +96,21 @@ Verify: `curl -s http://127.0.0.1:6333/collections` returns the list,
 
 MSMARCO-XI is a **gated** repo — set `HF_TOKEN` in `.env` first. The worker streams each
 language's parquet file, chunks it (multi-strategy), embeds with e5-small, writes a versioned
-Qdrant collection, validates, and promotes it behind the `voice_rag_active` alias.
+Qdrant collection, validates, and promotes it behind the `voice_rag_active` alias. **Each row
+is indexed twice: in its native language and in English (`English_passages`),** so both an
+English query and a Hindi/Bengali/Tamil/etc. query can retrieve the same fact.
 
 ```bash
-.venv311/bin/voice-rag-index --all --split validation --limit 100 --version slice-v1
-# or: make index-slice   (100-row validation slice, all 14 languages)
+.venv311/bin/voice-rag-index --all --split validation --limit 1000 --version slice-v1 --no-semantic
+# or: make index-slice (1000-row bilingual validation slice, all 14 languages, fast MPS build)
 ```
+
+> Building with `EMBED_DEVICE=mps` is ~50× faster than CPU for the offline batch embedding
+> and produces identical vectors; the interactive API still serves on CPU (`EMBED_DEVICE=cpu`)
+> for flat per-query latency. `--no-semantic` skips embedding-aware semantic chunks: for a
+> large build the qa-pair + adaptive sentence/fixed chunks carry retrieval, and the build
+> completes in minutes instead of hours. The full build uses `make index-all VERSION=v1`
+> (train split; ~55GB — needs a big disk).
 
 For a broader build: `make index-language LANG=hi VERSION=hi-v1` or
 `make index-all VERSION=msmarco-xi-v1` (full corpus is ~55GB — needs a big disk).
@@ -172,8 +181,9 @@ extractive relevance gate does the same for fast mode.
 # or: make evaluate QUERIES=evals/dataset.jsonl ; make evaluate-fast QUERIES=evals/dataset.jsonl
 ```
 
-Expected fast-mode numbers (49 queries, live index, CPU embed): **P50≈11ms · P70≈12ms ·
-P95≈20ms · P100≈21ms**, 8/8 trap queries refused, 0 wrong answers.
+Expected fast-mode numbers (57 queries, live bilingual index, CPU embed): **P50≈14ms · P70≈14ms ·
+P95≈24ms · P100≈41ms**, 30/30 corpus-answerable queries answered, 27/27 should-refuse queries
+refused, 0 wrong answers.
 
 ## Testing & linting
 
@@ -210,9 +220,10 @@ Run from the repo root. Tests are hermetic (no live-index dependency).
   Default `EMBED_DEVICE=cpu` avoids this entirely (flat ~10–25ms even after idle).
 - **Ingestion fails on Python 3.14** (`Pickler._batch_setitems` TypeError) — use
   `.venv311` (Python 3.11), never the API venv, for `voice-rag-index`/`voice-rag-ingest`.
-- **No answer for general questions in fast mode** — the local slice is 100 rows/language;
-  fast mode intentionally refuses absent content. Use `normal` mode for general questions
-  or build a larger index.
+- **No answer for general questions in fast mode** — fast mode answers exactly what the
+  indexed corpus contains and refuses what it cannot (verified: e.g. "capital of India"
+  is absent from the entire MSMARCO-XI validation split). Increase coverage with a larger
+  `--limit` build, or use `normal` mode for questions the corpus can't ground.
 - **`RepositoryNotFoundError`/401 downloading MSMARCO-XI** — repo is gated; set `HF_TOKEN`.
 
 ## Conventions to respect

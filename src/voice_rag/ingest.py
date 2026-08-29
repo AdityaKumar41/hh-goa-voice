@@ -122,58 +122,65 @@ def iter_chunks(rows: Iterable[dict], language: str, strategy: str = "adaptive")
     ``semantic`` (requires the worker's embedder). Every record keeps the source row
     metadata so retrieval can re-rank and cite with full context. Query-answer pairs
     are emitted as dedicated ``qa_pair`` chunks for direct answer retrieval.
+
+    Each MSMARCO-XI row carries both a translated (native) side and the original English
+    side; both are indexed, so an English query retrieves MSMARCO content and a native
+    query retrieves the translated content for the same fact.
     """
     seen: set[str] = set()
     for row in rows:
         query_id = str(row.get("query_id", "unknown"))
         common = _row_common(row, language)
-        query = common["query"]
-        answer = common["answer"]
-        if query and answer:
-            pair_id = content_hash("qa_pair", query_id, query, answer)
-            if pair_id not in seen:
-                seen.add(pair_id)
-                yield _chunk_record(
-                    Chunk(
-                        id=pair_id,
-                        text=f"{query} {answer}".strip(),
-                        language=language,
+        variants = (
+            (language, common["query"], common["answer"], _translated_texts(row)),
+            ("en", common["english_query"], common["english_answer"], _english_texts(row)),
+        )
+        for lang, query, answer, texts in variants:
+            if query and answer:
+                pair_id = content_hash("qa_pair", lang, query_id, query, answer)
+                if pair_id not in seen:
+                    seen.add(pair_id)
+                    yield _chunk_record(
+                        Chunk(
+                            id=pair_id,
+                            text=f"{query} {answer}".strip(),
+                            language=lang,
+                            query_id=query_id,
+                            selected=True,
+                            strategy="qa_pair",
+                            metadata={},
+                        ),
+                        language=lang,
                         query_id=query_id,
+                        passage_id=pair_id,
                         selected=True,
-                        strategy="qa_pair",
-                        metadata={},
-                    ),
-                    language=language,
-                    query_id=query_id,
-                    passage_id=pair_id,
-                    selected=True,
-                    source_hash=content_hash("qa_pair", language, query, answer),
-                    common=common,
-                )
-        for index, text in enumerate(_passage_texts(row)):
-            passage_id = content_hash(query_id, str(index), text)
-            if passage_id in seen:
-                continue
-            seen.add(passage_id)
-            use = strategy
-            if strategy == "adaptive":
-                use = "fixed_overlap" if len(text) > 1400 else "sentence_overlap"
-            for chunk in chunk_text(
-                text,
-                language=language,
-                query_id=query_id,
-                passage_id=passage_id,
-                strategy=use,
-            ):
-                yield _chunk_record(
-                    chunk,
-                    language=language,
+                        source_hash=content_hash("qa_pair", lang, query, answer),
+                        common=common,
+                    )
+            for index, text in enumerate(texts):
+                passage_id = content_hash(lang, query_id, str(index), text)
+                if passage_id in seen:
+                    continue
+                seen.add(passage_id)
+                use = strategy
+                if strategy == "adaptive":
+                    use = "fixed_overlap" if len(text) > 1400 else "sentence_overlap"
+                for chunk in chunk_text(
+                    text,
+                    language=lang,
                     query_id=query_id,
                     passage_id=passage_id,
-                    selected=_is_selected(row, index),
-                    source_hash=content_hash(language, query_id, text),
-                    common=common,
-                )
+                    strategy=use,
+                ):
+                    yield _chunk_record(
+                        chunk,
+                        language=lang,
+                        query_id=query_id,
+                        passage_id=passage_id,
+                        selected=_is_selected(row, index),
+                        source_hash=content_hash(lang, query_id, text),
+                        common={**common, "target_lang": str(row.get("target_lang", lang))},
+                    )
 
 
 def iter_semantic_chunks(
@@ -189,31 +196,36 @@ def iter_semantic_chunks(
     for row in rows:
         query_id = str(row.get("query_id", "unknown"))
         common = _row_common(row, language)
-        for index, text in enumerate(_passage_texts(row)):
-            if not _is_selected(row, index):
-                continue
-            passage_id = content_hash(query_id, str(index), text)
-            if passage_id in seen:
-                continue
-            seen.add(passage_id)
-            for chunk in chunk_semantic(
-                text,
-                language=language,
-                query_id=query_id,
-                passage_id=passage_id,
-                embed=embedder.embed_batch,
-                max_chars=max_chars,
-                overlap=overlap,
-            ):
-                yield _chunk_record(
-                    chunk,
-                    language=language,
+        variants = (
+            (language, _translated_texts(row)),
+            ("en", _english_texts(row)),
+        )
+        for lang, texts in variants:
+            for index, text in enumerate(texts):
+                if not _is_selected(row, index):
+                    continue
+                passage_id = content_hash(lang, query_id, str(index), text)
+                if passage_id in seen:
+                    continue
+                seen.add(passage_id)
+                for chunk in chunk_semantic(
+                    text,
+                    language=lang,
                     query_id=query_id,
                     passage_id=passage_id,
-                    selected=True,
-                    source_hash=content_hash("semantic", language, query_id, text),
-                    common=common,
-                )
+                    embed=embedder.embed_batch,
+                    max_chars=max_chars,
+                    overlap=overlap,
+                ):
+                    yield _chunk_record(
+                        chunk,
+                        language=lang,
+                        query_id=query_id,
+                        passage_id=passage_id,
+                        selected=True,
+                        source_hash=content_hash("semantic", lang, query_id, text),
+                        common={**common, "target_lang": str(row.get("target_lang", lang))},
+                    )
 
 
 def _row_common(row: dict, language: str) -> dict:
@@ -229,9 +241,15 @@ def _row_common(row: dict, language: str) -> dict:
     }
 
 
-def _passage_texts(row: dict) -> list[str]:
+def _translated_texts(row: dict) -> list[str]:
     passages = row.get("passages", {})
-    texts = passages.get("Translated_passages") or passages.get("English_passages") or []
+    texts = passages.get("Translated_passages") or []
+    return [normalize_text(str(text)) for text in texts if normalize_text(str(text))]
+
+
+def _english_texts(row: dict) -> list[str]:
+    passages = row.get("passages", {})
+    texts = passages.get("English_passages") or []
     return [normalize_text(str(text)) for text in texts if normalize_text(str(text))]
 
 
