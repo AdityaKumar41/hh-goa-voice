@@ -125,7 +125,7 @@ function App() {
         </div>}
       </section>
     </div>
-    <footer className="footer"><span>HACKER HOUSE CORE ASSIGNMENT</span><span>ELEVENLABS / QDRANT / MULTILINGUAL-E5</span><span>BUILT IN GOA ↗</span></footer>
+    <footer className="footer"><span>HACKER HOUSE CORE ASSIGNMENT</span><span>ELEVENLABS / QDRANT / MULTILINGUAL-E5</span><a href="/architecture.html">ARCHITECTURE ↗</a><span>BUILT IN GOA ↗</span></footer>
   </main>;
 }
 

@@ -65,13 +65,6 @@ def build_retriever():
         )
         client.get_collection(settings.qdrant_collection)
         embedder = Embedder(settings.embedding_model)
-        # Warm the model (load + realistic inference) so the first user query never
-        # pays model-load or accelerator kernel-compilation latency. MPS compiles a
-        # separate graph per batch shape, so warm both the single-query shape and a
-        # larger batch (indexing) shape.
-        embedder._load()
-        embedder.embed_batch(["Who can attend Hacker House Goa?"])
-        embedder.embed_batch(["What is the capital of India?" for _ in range(8)])
         dense = QdrantRetriever(client, settings.qdrant_collection, embedder)
         return HybridRetriever(dense)
     except Exception as exc:  # noqa: BLE001 - startup must tolerate an unavailable optional index
@@ -89,15 +82,23 @@ pipeline = QueryPipeline(settings, retriever=build_retriever())
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Warm the full retrieval path (embed + Qdrant connection + lexical merge) a few
-    # times so the first user request never pays accelerator graph compilation or
-    # connection setup. A single warmup can leave a residual first-call cost.
-    for _ in range(3):
-        try:
-            await pipeline.retriever.search("Is Hacker House Goa free?", "en", 4)
-        except Exception:
-            logger.warning("startup warmup search failed", exc_info=True)
+    def warm_retriever_sync() -> None:
+        # Do not block the web server from binding its port while a HuggingFace model
+        # downloads. Railway/Render health probes must be able to reach /api/health
+        # immediately after the container starts.
+        for _ in range(3):
+            try:
+                asyncio.run(pipeline.retriever.search("Is Hacker House Goa free?", "en", 4))
+            except Exception:
+                logger.warning("background retrieval warmup failed", exc_info=True)
+
+    warmup_task = asyncio.create_task(asyncio.to_thread(warm_retriever_sync))
     yield
+    warmup_task.cancel()
+    try:
+        await warmup_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="Voice RAG API", version="0.1.0", lifespan=lifespan)

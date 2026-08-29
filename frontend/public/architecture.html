@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hacker House Voice RAG · Architecture</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      body { margin: 0; min-height: 100vh; background: #101111; color: #f3efe7; }
+      main { max-width: 1500px; margin: 0 auto; padding: 32px 5vw 64px; }
+      nav { display: flex; justify-content: space-between; margin-bottom: 52px; font-size: 12px; letter-spacing: .12em; }
+      a { color: #d8c28b; text-decoration: none; }
+      h1 { max-width: 760px; margin: 0 0 14px; font-size: clamp(38px, 7vw, 92px); line-height: .94; font-weight: 500; letter-spacing: -.06em; }
+      .kicker { color: #d8c28b; font-size: 12px; letter-spacing: .16em; }
+      .lede { max-width: 680px; color: #a9aaa5; line-height: 1.6; }
+      .diagram { margin-top: 48px; padding: 28px; overflow: auto; background: #171918; border: 1px solid #343733; border-radius: 4px; }
+      .mermaid { min-width: 1050px; text-align: center; }
+      .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px; margin-top: 28px; }
+      .note { padding: 22px; border-top: 1px solid #d8c28b; background: #171918; }
+      .note h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: .08em; }
+      .note p { margin: 0; color: #a9aaa5; line-height: 1.55; font-size: 14px; }
+    </style>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "strict", flowchart: { curve: "basis" } });
+    </script>
+  </head>
+  <body>
+    <main>
+      <nav><a href="/">← RESEARCH LAB</a><span>HACKER HOUSE CORE / SYSTEM MAP</span></nav>
+      <p class="kicker">VOICE RAG PLATFORM / PRODUCTION ARCHITECTURE</p>
+      <h1>Evidence, from voice to verified answer.</h1>
+      <p class="lede">A complete view of the public frontend, Railway API, guarded research harness, hosted providers, vector index, and operational data flow.</p>
+      <section class="diagram"><pre class="mermaid">flowchart LR
+    U[User\nvoice or text] --> V[Vercel React frontend]
+    V -->|HTTPS /api| R[Railway FastAPI API]
+    R --> G[Query guard\nprivacy + prompt injection]
+    G --> H[ResearchHarness]
+    H --> Q[Hybrid retrieval]
+    Q --> E[Multilingual E5\nCPU embeddings]
+    E --> Z[(Qdrant\nvoice_rag_active alias)]
+    H --> F{Answer mode}
+    F -->|fast| X[Local extractive answer]
+    F -->|normal| L[OpenCode hosted LLM]
+    H --> C[Grounding + citation validation]
+    X --> C
+    L --> C
+    C --> O[Grounded response\nSSE or JSON]
+    O --> V
+    R --> S[ElevenLabs STT\nvoice only]
+    S --> H
+    H --> P[(Supabase PostgreSQL\nquery traces + metadata)]
+    W[Indexer / reindex CLI\nPython 3.11] --> E
+    W --> Z
+    W --> M[Validated manifest\natomic alias promotion]</pre></section>
+      <section class="notes">
+        <article class="note"><h2>INPUT</h2><p>Voice is transcribed by ElevenLabs; typed queries can use the same guarded pipeline.</p></article>
+        <article class="note"><h2>RETRIEVAL</h2><p>Multilingual E5 embeddings and lexical matching search the promoted Qdrant alias.</p></article>
+        <article class="note"><h2>VERIFICATION</h2><p>Answers are accepted only after citation and evidence-overlap checks.</p></article>
+        <article class="note"><h2>OPERATIONS</h2><p>Versioned index builds validate before atomic promotion; PostgreSQL stores traces and metadata.</p></article>
+      </section>
+    </main>
+  </body>
+</html>
