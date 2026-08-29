@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,8 +18,12 @@ class Settings(BaseSettings):
     opencode_go_base_url: str | None = None
     opencode_model: str = "deepseek-v4-flash"
     hf_token: str | None = None
-    postgres_dsn: str = "postgresql://voice_rag:voice_rag@localhost:5432/voice_rag"
+    postgres_dsn: str = Field(
+        default="postgresql://voice_rag:voice_rag@localhost:5432/voice_rag",
+        validation_alias=AliasChoices("POSTGRES_DSN", "DATABASE_URL"),
+    )
     qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str | None = None
     qdrant_collection: str = "voice_rag_active"
     require_active_index: bool = False
     index_batch_size: int = 64
@@ -46,6 +51,7 @@ class Settings(BaseSettings):
     max_answer_chars: int = 900
     request_timeout_seconds: float = 20.0
     web_research_enabled: bool = False
+    cors_origins: str = "*"
     jina_reader_url: str = "https://r.jina.ai"
     firecrawl_api_key: str | None = None
     firecrawl_base_url: str = "https://api.firecrawl.dev/v2"

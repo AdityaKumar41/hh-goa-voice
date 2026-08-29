@@ -56,7 +56,11 @@ def build_retriever():
     try:
         from qdrant_client import QdrantClient
 
-        client = QdrantClient(url=settings.qdrant_url, timeout=1)
+        client = QdrantClient(
+            url=settings.qdrant_url,
+            api_key=settings.qdrant_api_key,
+            timeout=1,
+        )
         client.get_collection(settings.qdrant_collection)
         embedder = Embedder(settings.embedding_model)
         # Warm the model (load + realistic inference) so the first user query never
@@ -93,7 +97,13 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Voice RAG API", version="0.1.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+_cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins or ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/api/benchmark")
@@ -125,9 +135,10 @@ async def health() -> HealthResponse:
         if settings.require_active_index or settings.app_env == "production"
         else "demo"
     )
+    postgres_status = "configured" if getattr(pipeline.trace_db, "connection", None) else "unavailable"
     return HealthResponse(
         status="ok" if qdrant_status != "unavailable" else "degraded",
-        dependencies={"api": "ok", "qdrant": qdrant_status, "postgres": "configured"},
+        dependencies={"api": "ok", "qdrant": qdrant_status, "postgres": postgres_status},
         index_version=settings.index_version,
     )
 

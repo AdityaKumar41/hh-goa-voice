@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: hh-goa-voice-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: REQUIRE_ACTIVE_INDEX
+        value: "true"
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PORT
+        value: "8000"
+      - key: EMBED_DEVICE
+        value: cpu
+      - key: EMBEDDING_MODEL
+        value: intfloat/multilingual-e5-small
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: voice_rag_active
+      - key: POSTGRES_DSN
+        sync: false
+      - key: OPENCODE_GO_API_KEY
+        sync: false
+      - key: OPENCODE_GO_BASE_URL
+        value: https://opencode.ai/zen/go/v1
+      - key: OPENCODE_MODEL
+        value: deepseek-v4-flash
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_STT_MODEL
+        value: scribe_v2
+      - key: CORS_ORIGINS
+        value: https://hh-goa-voice-olive.vercel.app
+      - key: TRACE_PATH
+        value: /tmp/voice-rag-traces.jsonl
+      - key: INDEX_VERSION
+        value: production

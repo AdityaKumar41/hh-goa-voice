@@ -67,9 +67,10 @@ services:
       REQUIRE_ACTIVE_INDEX: "true"
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      QDRANT_URL: http://qdrant:6333
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
       QDRANT_COLLECTION: voice_rag_active
-      DATABASE_URL: postgresql://${POSTGRES_USER:-voice_rag}:${POSTGRES_PASSWORD:-voice_rag}@postgres:5432/${POSTGRES_DB:-voice_rag}
+      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql://${POSTGRES_USER:-voice_rag}:${POSTGRES_PASSWORD:-voice_rag}@postgres:5432/${POSTGRES_DB:-voice_rag}}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
       EMBED_DEVICE: ${EMBED_DEVICE:-cpu}
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY}
@@ -98,7 +99,8 @@ services:
       dockerfile: Dockerfile.worker
     restart: unless-stopped
     environment:
-      QDRANT_URL: http://qdrant:6333
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
       QDRANT_COLLECTION: voice_rag_active
       HF_TOKEN: ${HF_TOKEN}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}

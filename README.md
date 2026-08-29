@@ -10,6 +10,19 @@ implementation and measured evidence.
 
 ## Quick start (recommended local development)
 
+## Deploy the API with one click
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/AdityaKumar41/hh-goa-voice)
+
+The button creates the API from [`render.yaml`](render.yaml). Render will prompt
+for the secret values (`POSTGRES_DSN`, `QDRANT_URL`, `QDRANT_API_KEY`,
+`OPENCODE_GO_API_KEY`, and `ELEVENLABS_API_KEY`). Use the Supabase DSN with
+`%40` for the `@` in the password and `?sslmode=require`.
+
+After Render gives you the API URL, add `VITE_API_URL=<api-url>` to the existing
+Vercel project's production environment variables and redeploy the frontend.
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for the verification and index requirements.
+
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev,ingest]'

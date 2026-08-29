@@ -58,7 +58,7 @@ def build_index(
     from qdrant_client import QdrantClient
 
     collection = f"{settings.qdrant_collection}_{version}"
-    client = QdrantClient(url=settings.qdrant_url, timeout=30)
+    client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key, timeout=30)
     embedder = Embedder(settings.embedding_model)
     indexer = QdrantIndexer(client, collection, embedder)
     indexer.ensure_collection()
@@ -138,6 +138,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build and promote a MSMARCO-XI Qdrant index")
     parser.add_argument("--language", action="append", dest="languages", choices=LANGUAGES)
     parser.add_argument("--all", action="store_true")
+    parser.add_argument("--curated-only", action="store_true")
     parser.add_argument("--split", default="train")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--version", required=True)
@@ -154,7 +155,7 @@ def main() -> None:
         help="skip embedding-aware semantic chunks (much faster; qa-pair + adaptive chunks remain)",
     )
     args = parser.parse_args()
-    languages = LANGUAGES if args.all else args.languages or ["hi"]
+    languages = [] if args.curated_only else LANGUAGES if args.all else args.languages or ["hi"]
     manifest = args.manifest or Path("data/manifests") / f"{args.version}.json"
     result = build_index(
         get_settings(),

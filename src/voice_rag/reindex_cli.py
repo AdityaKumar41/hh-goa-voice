@@ -45,14 +45,19 @@ def run_worker(args: list[str]) -> dict:
 
 
 def qdrant_http(path: str, method: str = "GET", body: dict | None = None) -> dict:
-    """Talk to the Qdrant REST API directly (assumes local qdrant on 6333)."""
+    """Talk to the configured Qdrant REST API, including a hosted cluster."""
     import urllib.error
     import urllib.request
 
-    url = f"http://127.0.0.1:6333{path}"
+    from .config import get_settings
+
+    settings = get_settings()
+    url = f"{settings.qdrant_url.rstrip('/')}{path}"
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
+    if settings.qdrant_api_key:
+        req.add_header("api-key", settings.qdrant_api_key)
     try:
         with urllib.request.urlopen(req) as resp:
             return json.loads(resp.read())
@@ -67,8 +72,7 @@ def check_qdrant() -> None:
     try:
         qdrant_http("/collections")
     except (URLError, ConnectionError) as e:
-        print(f"ERROR: Qdrant not reachable on 127.0.0.1:6333 — {e}", file=sys.stderr)
-        print("Run: make infra-up", file=sys.stderr)
+        print(f"ERROR: configured Qdrant is not reachable — {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -138,6 +142,7 @@ def main() -> None:
     parser.add_argument("--slice", action="store_true", help="quick validation slice (1000 rows x all langs, bilingual)")
     parser.add_argument("--language", help="reindex a single language (hi, en, ...)")
     parser.add_argument("--all", action="store_true", help="reindex all 14 languages")
+    parser.add_argument("--curated-only", action="store_true", help="index only reviewed Hacker House facts")
     parser.add_argument("--input", help="feed a local data file (custom corpus JSONL)")
     parser.add_argument("--version", help="explicit version name (default: auto slice-<timestamp>)")
     parser.add_argument("--from-manifest", help="resume from an existing manifest (version name)")
@@ -176,6 +181,8 @@ def main() -> None:
         worker_args += ["--language", args.language]
     elif args.all:
         worker_args += ["--all"]
+    elif args.curated_only:
+        worker_args += ["--curated-only"]
     # --input feeds a local file through the ingest+index path (client-provided corpus)
     if args.input and not (args.slice or args.language or args.all):
         # Fall back to HVX validated slice convention: index local file for the active corpus

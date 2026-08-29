@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
+const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const apiUrl = (path: string) => `${API_URL}${path}`;
+
 const languages = ["auto", "en", "as", "bn", "gu", "hi", "kn", "ml", "mr", "ne", "or", "pa", "sa", "ta", "te", "ur"];
 const stages = ["transcript", "retrieval", "generation", "verified"];
 
@@ -28,14 +31,14 @@ function App() {
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
 
-  useEffect(() => { fetch("/api/health").then(r => r.json()).then(setHealth).catch(() => setHealth(null)); }, []);
-  useEffect(() => { fetch("/api/benchmark").then(r => r.json()).then(setBenchmark).catch(() => setBenchmark(null)); }, []);
+  useEffect(() => { fetch(apiUrl("/api/health")).then(r => r.json()).then(setHealth).catch(() => setHealth(null)); }, []);
+  useEffect(() => { fetch(apiUrl("/api/benchmark")).then(r => r.json()).then(setBenchmark).catch(() => setBenchmark(null)); }, []);
 
   async function submit(audioBase64?: string, queryText?: string) {
     setError(""); setResult(null); setSourcesOpen(false); setStreamedAnswer(""); setStage("starting"); setLoading(true);
     try {
       const body = JSON.stringify({ text: queryText !== undefined ? (queryText || undefined) : (text || undefined), language: language === "auto" ? undefined : language, audio_base64: audioBase64, mode });
-      const response = await fetch("/api/query/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      const response = await fetch(apiUrl("/api/query/stream"), { method: "POST", headers: { "Content-Type": "application/json" }, body });
       if (!response.ok) { const p = await response.json().catch(() => ({})); throw new Error(p.detail || `Request failed (${response.status})`); }
       if (!response.body) throw new Error("The streaming response was unavailable.");
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";

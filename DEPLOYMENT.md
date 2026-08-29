@@ -84,8 +84,8 @@ Rollback is a single alias operation — microseconds, no reprocessing.
 
 ```bash
 cp .env.prod.example .env.prod
-#   edit .env.prod: real POSTGRES_PASSWORD, HF_TOKEN, OPENCODE_GO_API_KEY,
-#   ELEVENLABS_API_KEY (never commit these)
+#   edit .env.prod: real POSTGRES_DSN, QDRANT_URL, QDRANT_API_KEY,
+#   OPENCODE_GO_API_KEY, ELEVENLABS_API_KEY (never commit these)
 
 # One-time DB init
 docker compose -f docker-compose.prod.yml --env-file .env.prod \
@@ -105,6 +105,18 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod \
     exec worker voice-rag-reindex --status
 ```
 
+For a fresh hosted Qdrant cluster, seed the reviewed Hacker House corpus first:
+
+```bash
+set -a; source .env.prod; set +a
+.venv311/bin/voice-rag-reindex --curated-only --version prod-curated-1 --no-semantic
+```
+
+The command creates a 384-dimensional `voice_rag_active_prod-curated-1` collection,
+writes the curated vectors and payloads, validates it, and promotes the
+`voice_rag_active` alias. Full MSMARCO-XI indexing requires `HF_TOKEN`, Python 3.11,
+and substantially more storage.
+
 Notes:
 - `REQUIRE_ACTIVE_INDEX=true` in production → API refuses (HTTP 503) until a
   validated index is promoted. No silent demo mode.
@@ -112,6 +124,58 @@ Notes:
   durability story.
 - Secrets: use a secret manager (AWS Secrets Manager / Vault / Docker secrets)
   instead of a committed `.env.prod` for real deployments.
+
+## 4.1 One-click hosted API deploy (Render)
+
+The repository includes [`render.yaml`](render.yaml), so it can be deployed as a
+Render Blueprint from the repository's **New > Blueprint** flow. Render builds the
+Docker image and uses `/api/health` as the readiness check. The Blueprint asks for
+the secret values instead of storing them in Git.
+
+Set these secret variables when Render prompts for them:
+
+- `POSTGRES_DSN`: the Supabase connection string, with any `@` in the password
+  encoded as `%40`, and `?sslmode=require` appended.
+- `QDRANT_URL` and `QDRANT_API_KEY`: the production Qdrant endpoint and key.
+- `OPENCODE_GO_API_KEY`: required for FULL mode.
+- `ELEVENLABS_API_KEY`: required for voice input.
+
+After deployment, verify:
+
+```bash
+curl https://<render-service>.onrender.com/api/health
+```
+
+It must report `qdrant: configured`. Because production is fail-closed, HTTP 503
+until the `voice_rag_active` alias exists is expected and means the index must be
+promoted in the production Qdrant cluster.
+
+Finally add this environment variable to the existing Vercel project and redeploy
+the frontend:
+
+```text
+VITE_API_URL=https://<render-service>.onrender.com
+```
+
+The frontend source already uses this value for health, benchmark, and streaming
+query requests. The backend's `CORS_ORIGINS` is preconfigured for
+`https://hh-goa-voice-olive.vercel.app`.
+
+### 4.2 Railway checklist
+
+Railway uses the repository `Dockerfile` and [`railway.toml`](railway.toml). Set
+the same runtime variables in the Railway service's Variables tab; Railway does
+not automatically read a local `.env.prod` file from your computer. At minimum:
+`APP_ENV=production`, `REQUIRE_ACTIVE_INDEX=true`, `QDRANT_URL`,
+`QDRANT_API_KEY`, `QDRANT_COLLECTION=voice_rag_active`, and either `POSTGRES_DSN`
+or Railway's standard `DATABASE_URL`,
+`OPENCODE_GO_API_KEY`, `ELEVENLABS_API_KEY`, and `CORS_ORIGINS`.
+
+At the time of the last production check, Qdrant was healthy with 84 curated
+vectors and the active alias was promoted. The supplied Supabase hostname did
+not resolve in a direct connection test, so PostgreSQL trace persistence will
+remain unavailable until the DSN uses the actual Supabase host from the project
+dashboard. Query serving itself remains independent of the optional trace write.
 
 ---
 
