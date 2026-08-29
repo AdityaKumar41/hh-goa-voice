@@ -84,7 +84,7 @@ Rollback is a single alias operation — microseconds, no reprocessing.
 
 ```bash
 cp .env.prod.example .env.prod
-#   edit .env.prod: real POSTGRES_DSN, QDRANT_URL, QDRANT_API_KEY,
+#   edit .env.prod: real DATABASE_URL, QDRANT_URL, QDRANT_API_KEY,
 #   OPENCODE_GO_API_KEY, ELEVENLABS_API_KEY (never commit these)
 
 # One-time DB init
@@ -134,7 +134,7 @@ the secret values instead of storing them in Git.
 
 Set these secret variables when Render prompts for them:
 
-- `POSTGRES_DSN`: the Supabase connection string, with any `@` in the password
+- `DATABASE_URL`: the Supabase connection string, with any `@` in the password
   encoded as `%40`, and `?sslmode=require` appended.
 - `QDRANT_URL` and `QDRANT_API_KEY`: the production Qdrant endpoint and key.
 - `OPENCODE_GO_API_KEY`: required for FULL mode.
@@ -167,8 +167,8 @@ Railway uses the repository `Dockerfile` and [`railway.toml`](railway.toml). Set
 the same runtime variables in the Railway service's Variables tab; Railway does
 not automatically read a local `.env.prod` file from your computer. At minimum:
 `APP_ENV=production`, `REQUIRE_ACTIVE_INDEX=true`, `QDRANT_URL`,
-`QDRANT_API_KEY`, `QDRANT_COLLECTION=voice_rag_active`, and either `POSTGRES_DSN`
-or Railway's standard `DATABASE_URL`,
+`QDRANT_API_KEY`, `QDRANT_COLLECTION=voice_rag_active`, and `DATABASE_URL`
+(the legacy `POSTGRES_DSN` name is also accepted),
 `OPENCODE_GO_API_KEY`, `ELEVENLABS_API_KEY`, and `CORS_ORIGINS`.
 
 The runtime image includes `sentence-transformers` because the API must load the

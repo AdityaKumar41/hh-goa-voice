@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     hf_token: str | None = None
     postgres_dsn: str = Field(
         default="postgresql://voice_rag:voice_rag@localhost:5432/voice_rag",
-        validation_alias=AliasChoices("POSTGRES_DSN", "DATABASE_URL"),
+        validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_DSN"),
     )
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None

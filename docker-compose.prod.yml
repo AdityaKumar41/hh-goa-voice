@@ -70,13 +70,15 @@ services:
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       QDRANT_COLLECTION: voice_rag_active
-      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql://${POSTGRES_USER:-voice_rag}:${POSTGRES_PASSWORD:-voice_rag}@postgres:5432/${POSTGRES_DB:-voice_rag}}
+      DATABASE_URL: ${DATABASE_URL:-${POSTGRES_DSN:-postgresql://${POSTGRES_USER:-voice_rag}:${POSTGRES_PASSWORD:-voice_rag}@postgres:5432/${POSTGRES_DB:-voice_rag}}}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
       EMBED_DEVICE: ${EMBED_DEVICE:-cpu}
-      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY}
+      OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
+      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
+      OPENCODE_BASE_URL: ${OPENCODE_BASE_URL:-https://opencode.ai/zen/go/v1}
       OPENCODE_GO_BASE_URL: ${OPENCODE_GO_BASE_URL:-https://opencode.ai/zen/go/v1}
       OPENCODE_MODEL: ${OPENCODE_MODEL:-deepseek-v4-flash}
-      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       ELEVENLABS_STT_MODEL: ${ELEVENLABS_STT_MODEL:-scribe_v2}
       WEB_RESEARCH_ENABLED: ${WEB_RESEARCH_ENABLED:-false}
     ports:

@@ -15,7 +15,7 @@ implementation and measured evidence.
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/AdityaKumar41/hh-goa-voice)
 
 The button creates the API from [`render.yaml`](render.yaml). Render will prompt
-for the secret values (`POSTGRES_DSN`, `QDRANT_URL`, `QDRANT_API_KEY`,
+for the secret values (`DATABASE_URL`, `QDRANT_URL`, `QDRANT_API_KEY`,
 `OPENCODE_GO_API_KEY`, and `ELEVENLABS_API_KEY`). Use the Supabase DSN with
 `%40` for the `@` in the password and `?sslmode=require`.
 

@@ -26,10 +26,14 @@ services:
         sync: false
       - key: QDRANT_COLLECTION
         value: voice_rag_active
-      - key: POSTGRES_DSN
+      - key: DATABASE_URL
         sync: false
       - key: OPENCODE_GO_API_KEY
         sync: false
+      - key: OPENCODE_API_KEY
+        sync: false
+      - key: OPENCODE_BASE_URL
+        value: https://opencode.ai/zen/go/v1
       - key: OPENCODE_GO_BASE_URL
         value: https://opencode.ai/zen/go/v1
       - key: OPENCODE_MODEL
