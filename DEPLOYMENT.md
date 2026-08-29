@@ -171,6 +171,9 @@ not automatically read a local `.env.prod` file from your computer. At minimum:
 or Railway's standard `DATABASE_URL`,
 `OPENCODE_GO_API_KEY`, `ELEVENLABS_API_KEY`, and `CORS_ORIGINS`.
 
+The runtime image includes `sentence-transformers` because the API must load the
+same multilingual embedding model used to build the Qdrant collection.
+
 At the time of the last production check, Qdrant was healthy with 84 curated
 vectors and the active alias was promoted. The supplied Supabase hostname did
 not resolve in a direct connection test, so PostgreSQL trace persistence will

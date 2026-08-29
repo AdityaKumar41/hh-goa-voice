@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 CURATED_PATH = Path("data/curated/hacker-house-goa-2026.jsonl")
+_retriever_error: str | None = None
 
 
 def curated_documents() -> list[SearchDocument]:
@@ -53,6 +54,7 @@ def curated_documents() -> list[SearchDocument]:
 
 
 def build_retriever():
+    global _retriever_error
     try:
         from qdrant_client import QdrantClient
 
@@ -72,7 +74,9 @@ def build_retriever():
         embedder.embed_batch(["What is the capital of India?" for _ in range(8)])
         dense = QdrantRetriever(client, settings.qdrant_collection, embedder)
         return HybridRetriever(dense)
-    except Exception:  # noqa: BLE001 - startup must tolerate an unavailable optional index
+    except Exception as exc:  # noqa: BLE001 - startup must tolerate an unavailable optional index
+        _retriever_error = f"{type(exc).__name__}: {str(exc).splitlines()[0][:240]}"
+        logger.error("Qdrant retriever initialization failed: %s", _retriever_error)
         if settings.require_active_index or settings.app_env == "production":
             # Fail closed: production must not serve answers from demo or curated text.
             return InMemoryRetriever([])
@@ -136,11 +140,16 @@ async def health() -> HealthResponse:
         else "demo"
     )
     postgres_status = "configured" if getattr(pipeline.trace_db, "connection", None) else "unavailable"
-    return HealthResponse(
+    response = HealthResponse(
         status="ok" if qdrant_status != "unavailable" else "degraded",
         dependencies={"api": "ok", "qdrant": qdrant_status, "postgres": postgres_status},
         index_version=settings.index_version,
     )
+    if _retriever_error:
+        response.dependencies["qdrant_detail"] = _retriever_error
+    if postgres_status == "unavailable":
+        response.dependencies["postgres_detail"] = "metadata connection unavailable; check POSTGRES_DSN or DATABASE_URL"
+    return response
 
 
 def _require_active_index() -> None:
