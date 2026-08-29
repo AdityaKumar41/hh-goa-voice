@@ -140,6 +140,8 @@ async def health() -> HealthResponse:
         if settings.require_active_index or settings.app_env == "production"
         else "demo"
     )
+    if not getattr(pipeline.trace_db, "connection", None):
+        pipeline.trace_db.reconnect()
     postgres_status = "configured" if getattr(pipeline.trace_db, "connection", None) else "unavailable"
     response = HealthResponse(
         status="ok" if qdrant_status != "unavailable" else "degraded",
@@ -149,7 +151,11 @@ async def health() -> HealthResponse:
     if _retriever_error:
         response.dependencies["qdrant_detail"] = _retriever_error
     if postgres_status == "unavailable":
-        response.dependencies["postgres_detail"] = "metadata connection unavailable; check POSTGRES_DSN or DATABASE_URL"
+        response.dependencies["postgres_detail"] = getattr(
+            pipeline.trace_db,
+            "connection_error",
+            "metadata connection unavailable; check DATABASE_URL",
+        )
     return response
 
 

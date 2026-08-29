@@ -9,12 +9,20 @@ logger = logging.getLogger(__name__)
 class IndexMetadataStore:
     def __init__(self, dsn: str):
         self.connection = None
+        self.dsn = dsn
+        self.connection_error = None
+        self._connect()
+
+    def _connect(self):
         try:
             import psycopg
 
-            self.connection = psycopg.connect(dsn, autocommit=True)
-        except Exception:  # noqa: BLE001 - indexing must remain resumable if analytics is down
-            logger.warning("PostgreSQL metadata is unavailable; continuing with JSON manifest")
+            self.connection = psycopg.connect(self.dsn, autocommit=True, connect_timeout=5)
+            self.connection_error = None
+        except Exception as exc:  # noqa: BLE001 - indexing must remain resumable if analytics is down
+            self.connection = None
+            self.connection_error = f"{type(exc).__name__}: {str(exc).splitlines()[0][:240]}"
+            logger.warning("PostgreSQL metadata is unavailable: %s", self.connection_error)
 
     def start_job(self, language: str, split: str, version: str):
         if not self.connection:
@@ -61,12 +69,24 @@ class QueryTraceStore:
 
     def __init__(self, dsn: str):
         self.connection = None
+        self.dsn = dsn
+        self.connection_error = None
+        self._connect()
+
+    def _connect(self):
         try:
             import psycopg
 
-            self.connection = psycopg.connect(dsn, autocommit=True)
-        except Exception:  # noqa: BLE001 - query serving must not depend on analytics
-            logger.warning("PostgreSQL is unavailable; query traces stay on disk")
+            self.connection = psycopg.connect(self.dsn, autocommit=True, connect_timeout=5)
+            self.connection_error = None
+        except Exception as exc:  # noqa: BLE001 - query serving must not depend on analytics
+            self.connection = None
+            self.connection_error = f"{type(exc).__name__}: {str(exc).splitlines()[0][:240]}"
+            logger.warning("PostgreSQL is unavailable: %s", self.connection_error)
+
+    def reconnect(self) -> None:
+        if not self.connection:
+            self._connect()
 
     def write(
         self,
@@ -78,6 +98,7 @@ class QueryTraceStore:
         refused: bool,
         timings_ms: dict,
     ) -> None:
+        self.reconnect()
         if not self.connection:
             return
         try:
