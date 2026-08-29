@@ -102,7 +102,15 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Voice RAG API", version="0.1.0", lifespan=lifespan)
+_production_frontend_origin = "https://hh-goa-voice-olive.vercel.app"
 _cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+# Replace the permissive default with explicit origins so browsers receive a concrete
+# allow-origin value. This also keeps the deployed Vercel client reachable if a
+# Railway variable is stale or contains only a local origin.
+if "*" in _cors_origins:
+    _cors_origins = [_production_frontend_origin, "http://localhost:5173", "http://127.0.0.1:5173"]
+elif _production_frontend_origin not in _cors_origins:
+    _cors_origins.append(_production_frontend_origin)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins or ["*"],

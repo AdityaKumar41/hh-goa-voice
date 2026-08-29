@@ -44,3 +44,17 @@ def test_production_refuses_to_serve_without_active_index(monkeypatch):
 
     assert response.status_code == 503
     assert "index is active" in response.json()["detail"]
+
+
+def test_production_frontend_preflight_is_allowed():
+    response = TestClient(fastapi_app).options(
+        "/api/query/stream",
+        headers={
+            "Origin": "https://hh-goa-voice-olive.vercel.app",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://hh-goa-voice-olive.vercel.app"
