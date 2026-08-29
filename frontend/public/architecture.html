@@ -3,62 +3,154 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hacker House Voice RAG · Architecture</title>
+    <meta name="description" content="Detailed production architecture for the Hacker House Goa Voice RAG platform." />
+    <title>Architecture · Hacker House Voice RAG</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;1,500&display=swap" rel="stylesheet" />
     <style>
-      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-      body { margin: 0; min-height: 100vh; background: #101111; color: #f3efe7; }
-      main { max-width: 1500px; margin: 0 auto; padding: 32px 5vw 64px; }
-      nav { display: flex; justify-content: space-between; margin-bottom: 52px; font-size: 12px; letter-spacing: .12em; }
-      a { color: #d8c28b; text-decoration: none; }
-      h1 { max-width: 760px; margin: 0 0 14px; font-size: clamp(38px, 7vw, 92px); line-height: .94; font-weight: 500; letter-spacing: -.06em; }
-      .kicker { color: #d8c28b; font-size: 12px; letter-spacing: .16em; }
-      .lede { max-width: 680px; color: #a9aaa5; line-height: 1.6; }
-      .diagram { margin-top: 48px; padding: 28px; overflow: auto; background: #171918; border: 1px solid #343733; border-radius: 4px; }
-      .mermaid { min-width: 1050px; text-align: center; }
-      .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px; margin-top: 28px; }
-      .note { padding: 22px; border-top: 1px solid #d8c28b; background: #171918; }
-      .note h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: .08em; }
-      .note p { margin: 0; color: #a9aaa5; line-height: 1.55; font-size: 14px; }
+      :root {
+        color-scheme: light;
+        --green: #0a6338;
+        --cream: #f8f3e6;
+        --yellow: #f9df19;
+        --pink: #ff198d;
+        --ink: #123d2a;
+        --muted: #b7d0bd;
+        --line: rgba(249, 223, 25, .42);
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body { margin: 0; min-width: 320px; background: var(--green); color: var(--cream); font-family: "DM Sans", sans-serif; }
+      a { color: inherit; text-decoration: none; }
+      .shell { width: min(1440px, 90vw); margin: 0 auto; }
+      nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; border-bottom: 1px solid var(--line); font: 500 11px "DM Mono", monospace; letter-spacing: .08em; }
+      .back { color: var(--yellow); }
+      .nav-status { display: flex; align-items: center; gap: 9px; color: var(--muted); }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 0 4px rgba(255, 25, 141, .14); }
+      .hero { padding: clamp(64px, 10vw, 150px) 0 86px; max-width: 980px; }
+      .kicker, .eyebrow { margin: 0 0 18px; color: var(--yellow); font: 500 11px "DM Mono", monospace; letter-spacing: .14em; text-transform: uppercase; }
+      h1 { margin: 0; max-width: 900px; color: var(--cream); font: 500 clamp(56px, 10vw, 150px)/.88 "Playfair Display", serif; letter-spacing: -.065em; }
+      h1 em { color: var(--yellow); }
+      .lede { max-width: 710px; margin: 32px 0 0; color: var(--muted); font-size: clamp(17px, 2vw, 22px); line-height: 1.45; }
+      .meta { display: flex; flex-wrap: wrap; gap: 0; margin-top: 42px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .meta span { padding: 14px 24px 14px 0; margin-right: 24px; color: var(--cream); font: 11px "DM Mono", monospace; letter-spacing: .07em; text-transform: uppercase; }
+      .meta span + span { border-left: 1px solid var(--line); padding-left: 24px; }
+      .section-head { display: flex; align-items: baseline; gap: 18px; margin: 0 0 22px; }
+      .section-num { color: var(--pink); font: 500 13px "DM Mono", monospace; }
+      h2 { margin: 0; color: var(--cream); font-size: clamp(25px, 4vw, 44px); font-weight: 500; letter-spacing: -.045em; }
+      .diagram-wrap { padding-bottom: 86px; }
+      .diagram { overflow: auto; padding: 28px; border: 1px solid var(--line); background: rgba(0, 38, 20, .24); }
+      .mermaid { min-width: 1180px; text-align: center; }
+      .diagram-note { margin: 12px 0 0; color: var(--muted); font: 11px "DM Mono", monospace; letter-spacing: .03em; }
+      .notes { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+      .note { min-height: 220px; padding: 25px 22px 28px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .note h3 { margin: 0 0 52px; color: var(--yellow); font: 500 11px "DM Mono", monospace; letter-spacing: .12em; }
+      .note p { margin: 0; color: var(--cream); font-size: 17px; line-height: 1.42; }
+      .note small { display: block; margin-top: 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+      .truth { display: grid; grid-template-columns: 1fr 2fr; gap: 40px; padding: 54px 0 100px; }
+      .truth p { max-width: 680px; margin: 0; color: var(--cream); font-size: 19px; line-height: 1.5; }
+      .truth strong { color: var(--yellow); font-weight: 500; }
+      footer { display: flex; justify-content: space-between; padding: 22px 0 32px; border-top: 1px solid var(--line); color: var(--muted); font: 11px "DM Mono", monospace; letter-spacing: .08em; }
+      footer a { color: var(--yellow); }
+      @media (max-width: 800px) { .notes { grid-template-columns: repeat(2, 1fr); } .truth { grid-template-columns: 1fr; gap: 18px; } }
+      @media (max-width: 520px) { nav span:last-child { display: none; } .notes { grid-template-columns: 1fr; } .note { min-height: 0; } .note h3 { margin-bottom: 30px; } footer { gap: 20px; flex-direction: column; } }
     </style>
     <script type="module">
       import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-      mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "strict", flowchart: { curve: "basis" } });
+      mermaid.initialize({ startOnLoad: true, theme: "base", securityLevel: "strict", themeVariables: { background: "#0a6338", primaryColor: "#f9df19", primaryTextColor: "#123d2a", primaryBorderColor: "#f9df19", lineColor: "#f9df19", secondaryColor: "#ff198d", tertiaryColor: "#f8f3e6", clusterBkg: "#07522f", clusterBorder: "#f9df19", fontFamily: "DM Sans" }, flowchart: { curve: "basis", htmlLabels: true, padding: 18 } });
     </script>
   </head>
   <body>
-    <main>
-      <nav><a href="/">← RESEARCH LAB</a><span>HACKER HOUSE CORE / SYSTEM MAP</span></nav>
-      <p class="kicker">VOICE RAG PLATFORM / PRODUCTION ARCHITECTURE</p>
-      <h1>Evidence, from voice to verified answer.</h1>
-      <p class="lede">A complete view of the public frontend, Railway API, guarded research harness, hosted providers, vector index, and operational data flow.</p>
-      <section class="diagram"><pre class="mermaid">flowchart LR
-    U[User\nvoice or text] --> V[Vercel React frontend]
-    V -->|HTTPS /api| R[Railway FastAPI API]
-    R --> G[Query guard\nprivacy + prompt injection]
-    G --> H[ResearchHarness]
-    H --> Q[Hybrid retrieval]
-    Q --> E[Multilingual E5\nCPU embeddings]
-    E --> Z[(Qdrant\nvoice_rag_active alias)]
-    H --> F{Answer mode}
-    F -->|fast| X[Local extractive answer]
-    F -->|normal| L[OpenCode hosted LLM]
-    H --> C[Grounding + citation validation]
-    X --> C
-    L --> C
-    C --> O[Grounded response\nSSE or JSON]
-    O --> V
-    R --> S[ElevenLabs STT\nvoice only]
-    S --> H
-    H --> P[(Supabase PostgreSQL\nquery traces + metadata)]
-    W[Indexer / reindex CLI\nPython 3.11] --> E
-    W --> Z
-    W --> M[Validated manifest\natomic alias promotion]</pre></section>
-      <section class="notes">
-        <article class="note"><h2>INPUT</h2><p>Voice is transcribed by ElevenLabs; typed queries can use the same guarded pipeline.</p></article>
-        <article class="note"><h2>RETRIEVAL</h2><p>Multilingual E5 embeddings and lexical matching search the promoted Qdrant alias.</p></article>
-        <article class="note"><h2>VERIFICATION</h2><p>Answers are accepted only after citation and evidence-overlap checks.</p></article>
-        <article class="note"><h2>OPERATIONS</h2><p>Versioned index builds validate before atomic promotion; PostgreSQL stores traces and metadata.</p></article>
-      </section>
-    </main>
+    <div class="shell">
+      <nav><a class="back" href="/">← RESEARCH LAB</a><span>HACKER HOUSE CORE / SYSTEM MAP</span><span class="nav-status"><i class="dot"></i> PRODUCTION SHAPE</span></nav>
+      <header class="hero">
+        <p class="kicker">Voice RAG platform / production architecture</p>
+        <h1>Evidence, from voice to <em>verified answer.</em></h1>
+        <p class="lede">A detailed map of the public experience, guarded research runtime, multilingual retrieval plane, optional tools, operational memory, and the evaluation loop that keeps releases grounded.</p>
+        <div class="meta"><span>Vercel → Railway</span><span>Qdrant + E5</span><span>Fast / normal modes</span><span>JSON + SSE</span></div>
+      </header>
+
+      <main>
+        <section class="diagram-wrap" id="system-map">
+          <div class="section-head"><span class="section-num">01</span><h2>One request, end to end</h2></div>
+          <div class="diagram"><pre class="mermaid">flowchart LR
+  subgraph EDGE[EXPERIENCE / EDGE]
+    U[User\nvoice or text] --> FE[Vercel\nReact + Vite]
+    FE -->|HTTPS /api| API[Railway\nFastAPI service]
+  end
+
+  subgraph RUN[RESEARCH RUNTIME / ONE REQUEST]
+    API --> STT[ElevenLabs STT\nvoice input only]
+    API --> H[ResearchHarness\nsingle orchestration seam]
+    STT --> H
+    H --> G[QueryGuard\nsafety + privacy + scope]
+    G --> GR[Optional bounded graph\nfixed research workflow]
+    GR --> RET[Hybrid retrieval\ndense + lexical]
+    RET --> EMB[Multilingual E5\n384-dim query embedding]
+    EMB --> Q[(Qdrant\nvoice_rag_active alias)]
+    Q --> CTX[Context fit\nscore floor + char budget]
+    CTX --> MODE{Answer mode}
+    MODE -->|fast| FAST[Local extractive\npassage answer]
+    MODE -->|normal| LLM[OpenCode\nhosted generator]
+    FAST --> VAL[Grounding validation\ncitation IDs + overlap]
+    LLM --> VAL
+    VAL --> OUT[Grounded JSON\nor SSE events]
+    OUT --> FE
+  end
+
+  subgraph KNOW[KNOWLEDGE / INDEXING PLANE]
+    DATA[MSMARCO-XI +\ncurated Goa corpus] --> IW[Python 3.11\nindex worker / CLI]
+    IW --> IE[Chunk + embed\nnative + English copies]
+    IE --> QC[Versioned Qdrant\ncollection]
+    QC --> CHECK[Validate\ncounts + dimensions]
+    CHECK --> PROMOTE[Atomic alias promotion\nvoice_rag_active]
+    PROMOTE --> Q
+  end
+
+  subgraph TOOLS[OPTIONAL READ-ONLY TOOLS]
+    J[Jina Reader]
+    FC[Firecrawl]
+  end
+  GR -.->|only when enabled| J
+  GR -.->|only when enabled| FC
+  J -.-> CTX
+  FC -.-> CTX
+
+  subgraph OPS[LLM OPS / OPERATIONS]
+    TRACE[TraceSink\nprivacy-safe JSONL] --> PG[(Supabase PostgreSQL\nquery traces + index metadata)]
+    H --> TRACE
+    EVAL[Evaluation + latency\nrefusal + grounding gates] --> REL[Release record\nmodel / prompt / index version]
+    PG --> EVAL
+    REL --> IW
+  end
+
+  MEM[Memory boundary\nno personal conversational memory in v1\nshared RAG knowledge only]
+  MEM -.-> H
+
+  classDef edge fill:#f9df19,stroke:#f9df19,color:#123d2a,stroke-width:2px
+  classDef runtime fill:#f8f3e6,stroke:#f9df19,color:#123d2a,stroke-width:2px
+  classDef accent fill:#ff198d,stroke:#ff198d,color:#fff,stroke-width:2px
+  classDef store fill:#07522f,stroke:#f9df19,color:#f8f3e6,stroke-width:2px
+  classDef ops fill:#123d2a,stroke:#b7d0bd,color:#f8f3e6,stroke-width:1px
+  class U,FE,API edge
+  class STT,H,G,GR,RET,EMB,CTX,MODE,FAST,LLM,VAL,OUT,IW,IE,CHECK,PROMOTE runtime
+  class J,FC,REL,EVAL accent
+  class Q,QC,PG,DATA store
+  class TRACE,MEM ops</pre></div>
+          <p class="diagram-note">Solid arrows are the serving or indexing path. Dashed arrows are optional tool calls or explicit boundaries.</p>
+        </section>
+
+        <section class="notes">
+          <article class="note"><h3>02 / THE SEAM</h3><p>ResearchHarness owns the sequence.</p><small>Guard → retrieve → fit context → generate → validate → trace. This keeps fast and normal answers under one policy boundary.</small></article>
+          <article class="note"><h3>03 / MEMORY</h3><p>Operational memory is not user memory.</p><small>PostgreSQL stores query traces and index metadata. v1 intentionally has no personal conversational memory or profile store.</small></article>
+          <article class="note"><h3>04 / TOOLS</h3><p>External research stays read-only.</p><small>Jina Reader and Firecrawl are optional tools behind the bounded workflow. They do not write to the platform or silently expand its knowledge base.</small></article>
+          <article class="note"><h3>05 / LLM OPS</h3><p>Every release has an evidence loop.</p><small>Index versions, manifests, latency checks, refusal checks, grounding validation, and privacy-safe traces support safe promotion.</small></article>
+        </section>
+
+        <section class="truth"><p class="eyebrow">Architecture truth</p><p>The production system is deliberately <strong>stateless at the conversation layer</strong>: each request is grounded against the shared, versioned corpus. Qdrant is the retrieval memory; PostgreSQL is the operational record; traces and evaluations are the LLMOps feedback loop. That boundary is visible here so “memory” is never implied where it is not implemented.</p></section>
+      </main>
+      <footer><span>HH GOA / VOICE RAG / 2026</span><a href="/">BACK TO THE LAB ↗</a></footer>
+    </div>
   </body>
 </html>

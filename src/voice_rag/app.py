@@ -151,11 +151,14 @@ async def health() -> HealthResponse:
     if _retriever_error:
         response.dependencies["qdrant_detail"] = _retriever_error
     if postgres_status == "unavailable":
-        response.dependencies["postgres_detail"] = getattr(
+        postgres_error = getattr(
             pipeline.trace_db,
             "connection_error",
             "metadata connection unavailable; check DATABASE_URL",
         )
+        if "Network is unreachable" in postgres_error and ":" in postgres_error:
+            postgres_error += "; use the Supabase IPv4 pooler URL instead of the direct db host"
+        response.dependencies["postgres_detail"] = postgres_error
     return response
 
 

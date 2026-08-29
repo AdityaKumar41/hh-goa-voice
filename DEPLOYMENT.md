@@ -134,8 +134,10 @@ the secret values instead of storing them in Git.
 
 Set these secret variables when Render prompts for them:
 
-- `DATABASE_URL`: the Supabase connection string, with any `@` in the password
-  encoded as `%40`, and `?sslmode=require` appended.
+- `DATABASE_URL`: the Supabase **Session pooler** connection string from Connect,
+  with any `@` in the password encoded as `%40`. Use the pooler host
+  (`*.pooler.supabase.com`), not the direct `db.<project-ref>.supabase.co` host,
+  because Railway environments commonly have no IPv6 route to the direct host.
 - `QDRANT_URL` and `QDRANT_API_KEY`: the production Qdrant endpoint and key.
 - `OPENCODE_GO_API_KEY`: required for FULL mode.
 - `ELEVENLABS_API_KEY`: required for voice input.
